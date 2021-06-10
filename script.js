@@ -1,12 +1,16 @@
 class TextHandler {
     #PHRASE = 3
-    #PADDING = 5 // make modifiable for accuracy
+    #PADDING_MAX = 5 // make modifiable for accuracy
+    #MATCH_ACCURACY = 2 // make modifiable for accuracy
 
-    #badCount = 0
+    #padding = 5
     #rightInRow = 0
     state = true
+    finished = false
 
-    current = ""
+    #currSpokenWord = ""
+    #currSpokenPhrase = ""
+
     scriptPos = 0
 
 
@@ -17,11 +21,11 @@ class TextHandler {
     }
 
     clear() {
-        this.#badCount = 0
-        this.#rightInRow = 0
-        this.state = true
 
-        this.current = ""
+        this.state = true
+        this.finished = false
+        this.#currSpokenWord = ""
+        this.#currSpokenPhrase = ""
         this.scriptPos = 0
         this.script = []
 
@@ -31,13 +35,18 @@ class TextHandler {
         return this.script[this.scriptPos]
     }
 
-    matchStrength(a, b) {
+    isMatch(a, b) {
         // Levenshtein distance -
         // https://en.wikipedia.org/wiki/Levenshtein_distance
 
-        if (a.length === 0) return b.length;
-        if (b.length === 0) return a.length;
+        if (a == b) return true
 
+        if (a.length === 0) return b.length <= this.#MATCH_ACCURACY;
+        if (b.length === 0) return a.length <= this.#MATCH_ACCURACY;
+
+        if (a.length <= this.#MATCH_ACCURACY + 1 || b.length <= this.#MATCH_ACCURACY + 1) {
+            return false;
+        }
 
         var arr = [];
 
@@ -66,194 +75,191 @@ class TextHandler {
             }
         }
 
-        return arr[b.length][a.length];
+        return arr[b.length][a.length] <= this.#MATCH_ACCURACY;
     }
 
-    algorithm(recognized) {
+    setCurrSpokenWord(newWord) {
+        this.#currSpokenWord = newWord.toLowerCase()
+    }
 
-        if (!recognized) {
-            let i
+    setCurrSpokenPhrase(newPhrase) {
+        this.#currSpokenPhrase = newPhrase.toLowerCase()
 
-            if (this.scriptPos - this.#PADDING < 0) i = 0
-            else i = this.scriptPos - this.#PADDING
+        this.#padding = this.#currSpokenPhrase.split(" ").length
 
-            let k
+        if (this.#padding > this.#PADDING_MAX) {
+            this.#padding = this.#PADDING_MAX
+            let temp = this.scriptPos - this.#PADDING_MAX
+            if (temp < 0) temp = 0
+            this.#currSpokenPhrase = this.#currSpokenPhrase.split(" ").slice(temp, this.scriptPos + 1).join(" ")
+        }
+    }
 
-            if (this.scriptPos + this.#PADDING >= this.script.length) k = this.script.length - 1
-            else k = this.scriptPos + this.#PADDING
+    isPhraseNear() { // TODO: #2 fix this!
 
-            let distance = Infinity
-            for (; i < k; i++) {
-                if (this.matchStrength(this.script[i], this.current) <= 1) {
-                    if (Math.abs(i - this.scriptPos) < Math.abs(distance)) {
-                        distance = i - this.scriptPos
-                    }
+        const extraPadding = this.#padding * 3
+        let i
+        // before
+        if (this.scriptPos - this.#padding + 1 - extraPadding < 0) i = 0 // scriptpos -> last element of phrase
+        else i = this.scriptPos - this.#padding + 1 - extraPadding // need to - padding - 1 to reach first element of phrase
+        // [ 'Banana', 'Orange', 'Lemon', 'Apple', 'Mango' ]
+        //             |                     ^   | scriptPos = 3... padding = 3... need to go back 2, so + 1
+
+        let k
+        // after
+        if (this.scriptPos + extraPadding >= this.script.length) k = this.script.length - 1
+        else k = this.scriptPos + extraPadding
+
+        let distance = Infinity
+        for (; i < k; i++) {
+
+            if (this.isMatch(this.script.slice(i, i + this.#padding).join(" "), this.#currSpokenPhrase)) {
+
+                // [... 'Banana', 'Orange', 'Lemon', 'Apple', 'Mango', 'Pear', 'S', 'K'... ]
+                // if looking for [lemon, apple, mango], i will match here  | ^                      |
+                //0      (2)          2                   (-5)             7
+                if (Math.abs(i - this.scriptPos) < Math.abs(distance)) { // may need to change based on before/after
+                    distance = i - this.scriptPos
                 }
-            }
-
-            if (distance != Infinity) {
-                this.scriptPos = i + distance
-                this.#rightInRow++
-                if (this.#badCount < this.#PHRASE) {
-                    this.#badCount = 0
-                    return true
-                }
-                else if (this.#rightInRow == this.#PHRASE && this.#badCount > 0) {
-                    this.#badCount = 0
-                    return true
-                }
-                return true
-            }
-            else {
-                this.#badCount++
-                if (this.#badCount >= this.#PADDING) {
-                    this.state = false
-                }
-
-                this.#rightInRow = 0
-                return false
             }
         }
 
-        else {
+        if (distance != Infinity) {
+            // before
+            if (distance < 0) {
+                this.scriptPos - this.#padding + 1 + i
+            }
+            if (i - distance <= k && i - distance >= i) {
+                this.scriptPos = i - distance
+            }
             this.#rightInRow++
-            if (this.#badCount < this.#PHRASE) {
-                this.#badCount = 0
-                return true
-            }
-            else if (this.#rightInRow == this.#PHRASE && this.#badCount > 0) {
-                this.#badCount = 0
-                return true
-            }
+            return true
+        }
+        else {
+            return false;
+            // ret false
+        }
 
+    }
+    isWordNear() {
+
+        return false
+    }
+
+    algorithm() {
+        if (this.scriptPos == this.script.length || this.script.slice(-1).toString() == this.wordAtCurrPos()) {
+            this.state = false
+            this.finished = true
+            return true
+        }
+        if (this.isMatch(this.wordAtCurrPos(), this.#currSpokenWord)) {
+            // console.log(this.wordAtCurrPos + this.#currSpokenWord);
+            this.scriptPos++
+            return true
+        }
+        else if (this.isPhraseNear()) {
+            return true
+        }
+        else if (this.isWordNear()) {
+            return true
+        }
+        
+        else {
+            // maybe: do nothing
             return false
         }
-
-
     }
 }
 
 const t = new TextHandler()
-headerText = ""
+var running = true
+
+
+window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const speechRecognition = new SpeechRecognition();
+speechRecognition.interimResults = true;
+speechRecognition.lang = 'en-US';
+
+let p = document.createElement('p');
+const words = document.querySelector('.words');
+words.appendChild(p);
+
+speechRecognition.addEventListener('result', e => {
+    if (running) {
+        const transcript = Array.from(e.results)
+            .map(result => result[0])
+            .map(result => result.transcript)
+            .join(' ');
+
+
+        
+        p.textContent = transcript
+        t.setCurrSpokenPhrase(transcript)
+        const temp = transcript.split(" ").pop()
+        t.setCurrSpokenWord(temp)
+        console.log(temp);
+
+        let good = t.algorithm()
+
+        console.log(good + " " + transcript + " at " + t.scriptPos);
 
 
 
-if ("webkitSpeechRecognition" in window) {
-
-
-    const MAX_TRIES = 5 // make modifiable for accuracy
-    tries = 0
-
-    // Initialize webkitSpeechRecognition
-    let speechRecognition = new webkitSpeechRecognition();
-
-
-    // Set the properties for the Speech Recognition object
-    speechRecognition.continuous = true;
-    speechRecognition.interimResults = true;
-    speechRecognition.lang = "en-US"
-
-
-
-    speechRecognition.onresult = (event) => {
-
-
-
-        // Create the interim transcript string locally because we don't want it to persist like final transcript
-        interim_transcript = ""
-
-
-        // Loop through the results from the speech recognition object.
-    loop1:
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            // If the result item is Final, add it to Final Transcript, Else add it to Interim transcript
-
-            let words = event.results[i][0].transcript.split(" ")
-            console.log("maybe: " + words);
-        loop2:
-            for (const word of words) {
-                if (t.matchStrength(word, t.wordAtCurrPos()) > 2) {
-                    tries++
-
-                    if (tries === MAX_TRIES) {
-                        t.current = word
-                        console.log(t.current + " " + t.algorithm(false))
-                        t.scriptPos++
-                        tries = 0
-                    }
-                }
-                else {
-                    tries = 0
-
-                    t.current = word
-                    console.log(t.current + " " + t.algorithm(true))
-                    t.scriptPos++
-                }
-
-                if (t.scriptPos === t.script.length && t.scriptPos != 0) {
-                    console.log("done")
-                    t.state = false
-                }
-                if (!t.state) {
-                    headerText = t.script.toString()
-                    $("#result").html(headerText)
-                    $("#btn2").click()
-                    
-                    break loop1
-                }
-                else {
-                    headerText = t.script.slice(0, t.scriptPos).toString()
-                    $("#result").html('<span style="color: blue">' + headerText + "</span> " + t.script.slice(t.scriptPos, t.script.length).toString())
-                }
-            }
-
-            /* else {
-                
-                interim_transcript += event.results[i][0].transcript;
-            } */
+        if (e.results[0].isFinal) {
+            p = document.createElement('p');
+            words.appendChild(p);
         }
 
+        if (!t.state) {
+            $("#btn2").click()
+            
+        }
+        if (t.finished) {
+            // add some finish graphic
+        } else {} // error
+        
+
+    }
+});
+
+speechRecognition.addEventListener('end', speechRecognition.start);
 
 
-        // Set the Final transcript and Interim transcript.
+// Set the onClick property of the start button
+$(document).ready(function () {
 
-    };
+    //This function called when the button is clicked
+    $("#btn").click(function () {
 
-    // Set the onClick property of the start button
-    $(document).ready(function () {
+        // val() method is used to get the values from 
+        // textarea and stored in txt variable
+        const script = $("#textinp").val()
+        if (script == "") alert("Enter a script")
+        else {
 
-        //This function called when the button is clicked
-        $("#btn").click(function () {
-
-            // val() method is used to get the values from 
-            // textarea and stored in txt variable
-            const script = $("#textinp").val()
-            headerText = script
-            $("#result").html(headerText)
             t.setScript(script)
-
+            running = true;
             speechRecognition.start()
 
-        });
+        }
     });
+});
 
-    // Set the onClick property of the start button
-    $(document).ready(function () {
+// Set the onClick property of the start button
+$(document).ready(function () {
 
-        //This function called when the button is clicked
-        $("#btn2").click(function () {
+    //This function called when the button is clicked
+    $("#btn2").click(function () {
 
-            // val() method is used to get the values from 
-            // textarea and stored in txt variable
+        // val() method is used to get the values from 
+        // textarea and stored in txt variable
 
-            speechRecognition.stop()
-            //   console.log("fuckkkk")
-            t.clear()
-            tries = 0
-        });
+        console.log("fuckkkk")
+        t.clear()
+        running = false
+
     });
-} else {
-    console.log("Speech Recognition Not Available");
-}
+});
 
 
