@@ -209,26 +209,28 @@ var contractions = new Contractions(wordLookup);
 
 
 class TextHandler {
-    #PHRASE = 3
+    #BAD_MAX = 3
     #PADDING_MAX = 6 // make modifiable for accuracy
     #MATCH_ACCURACY = 2 // make modifiable for accuracy
 
-    #padding = 5
-    #rightInRow = 0
+    #badcount = 0
     state = true
     finished = false
 
     #currSpokenWord = ""
-    #currSpokenPhrase = ""
 
     scriptPos = 0
-
+    ogScriptPos = 0
+    #skip = true
 
     setScript(script) {
-        this.originalScript = script
+        this.originalScript = script.split(" ")
         script = contractions.expand(script.toLowerCase()) // TODO: #3 map OG script to this one cuz changed contractions
-        this.script = script.replace(/\n/g, " ").split(" ").filter(x => x != "")
+        this.script = script.replace(/\n/g, " ").replace("/[^a-zA-Z0-9]/g", "").split(" ").filter(x => x != "")
+    }
 
+    setCurrSpokenWord(newWord) {
+        this.#currSpokenWord = newWord.toLowerCase()
     }
 
     clear() {
@@ -236,14 +238,40 @@ class TextHandler {
         this.state = true
         this.finished = false
         this.#currSpokenWord = ""
-        this.#currSpokenPhrase = ""
         this.scriptPos = 0
+        this.ogScriptPos = 0
+        this.#badcount = 0
         this.script = []
 
     }
 
     wordAtCurrPos() {
         return this.script[this.scriptPos]
+    }
+
+    ogWordAtCurrPos() {
+        return this.originalScript[this.ogScriptPos]
+    }
+
+
+
+    wordsFromOriginalScript(isContr) { // TODO: #4 fix wordsFromOGScript()
+        if (!isContr) {
+            this.ogScriptPos++
+        }
+        else {
+            if (contractions.expand(this.ogWordAtCurrPos()) != this.ogWordAtCurrPos()) {
+                console.log("here " + this.ogWordAtCurrPos());
+                if (!skip) {
+                    this.ogScriptPos++
+                }
+                skip = !this.#skip
+            }
+        }
+
+        while (this.ogWordAtCurrPos() === '\n') this.ogScriptPos++
+        return this.originalScript.slice(0, this.ogScriptPos).join(" ")
+
     }
 
     isMatch(a, b) {
@@ -289,23 +317,14 @@ class TextHandler {
         return arr[b.length][a.length] <= this.#MATCH_ACCURACY;
     }
 
-    setCurrSpokenWord(newWord) {
-        this.#currSpokenWord = newWord.toLowerCase()
-    }
+    isDone() {
+        if (this.scriptPos == this.script.length) {
 
-    setCurrSpokenPhrase(newPhrase) {
-        this.#currSpokenPhrase = newPhrase.toLowerCase()
-
-        this.#padding = this.#currSpokenPhrase.split(" ").length
-
-        if (this.#padding > this.#PADDING_MAX) {
-            this.#padding = this.#PADDING_MAX
-            let temp = this.scriptPos - this.#PADDING_MAX
-            if (temp < 0) temp = 0
-            this.#currSpokenPhrase = this.#currSpokenPhrase.split(" ").slice(temp, this.scriptPos + 1).join(" ")
+            this.state = false
+            this.finished = true
+            return true
         }
     }
-
 
     isWordNear() {
 
@@ -332,7 +351,6 @@ class TextHandler {
         if (distance != Infinity) {
             this.scriptPos = distance + this.scriptPos
             if (this.scriptPos < 0 || this.scriptPos >= this.script.length) alert("error: " + this.scriptPos)
-            this.#rightInRow++
             return true
         }
         else {
@@ -340,34 +358,32 @@ class TextHandler {
             // ret false
         }
     }
-    isDone() {
-        if (this.scriptPos == this.script.length - 1) {
-
-            this.state = false
-            this.finished = true
-            return true
-        }
-    }
+    
     algorithm() {
 
         if (this.isMatch(this.wordAtCurrPos(), this.#currSpokenWord)) {
-
-            console.log("1");
+            this.#badcount = 0
             // console.log(this.wordAtCurrPos + this.#currSpokenWord);
             this.scriptPos++
             this.isDone()
             return true
         }
 
-        else if (this.isWordNear()) {
+        else if (this.#badcount >= this.#BAD_MAX) {
+            let ret = false
+            if (this.isWordNear()) {
+                this.#badcount = 0
+                ret = true
+            }
             this.isDone()
-            return true
+            return ret
         }
 
-        else {
-            // maybe: do nothing
-            return false
-        }
+
+        this.#badcount++
+        // maybe: do nothing
+        return false
+
 
 
     }
@@ -396,14 +412,24 @@ speechRecognition.addEventListener('result', e => {
 
 
 
-        p.textContent = transcript
-        let temp = transcript.replace("  ", " ").split(" ").pop()
-        temp = contractions.expand(temp)
+
+        let ptemp = transcript.replace("  ", " ").split(" ").pop()
+        let temp = contractions.expand(ptemp)
+        // console.log(temp + ' ' + ptemp);
+        let cont = false
+        if (temp != ptemp) cont = true
         for (const i of temp.split(" ")) {
             t.setCurrSpokenWord(i)
-            console.log(i);
+            // console.log(i);
 
+            // p.textContent = transcript
+            
+            console.log("cont " + cont);
             let good = t.algorithm()
+
+            if (good) {
+                p.textContent = t.wordsFromOriginalScript(cont)
+            }
 
             console.log(good + " " + i + " at " + t.scriptPos);
         }
@@ -439,14 +465,17 @@ $(document).ready(function () {
 
         // val() method is used to get the values from 
         // textarea and stored in txt variable
-        const script = $("#textinp").val()
+        const script = document.getElementById("message").innerText.trim()
+        console.log(script);
         if (script == "") alert("Enter a script")
         else {
 
             t.setScript(script)
             running = true;
-            speechRecognition.start()
-
+            try {
+                speechRecognition.start()
+            } catch (err) {}
+            
         }
     });
 });
@@ -460,7 +489,7 @@ $(document).ready(function () {
         // val() method is used to get the values from 
         // textarea and stored in txt variable
 
-        console.log("fuckkkk")
+        console.log('%cDone', 'background: #222; color: #ae1ebb');
         t.clear()
         running = false
 
