@@ -38,6 +38,9 @@ body {
     background-size: 100% 3rem;
     position: relative;
     line-height: 3rem;
+    overflow-wrap: break-word;
+    display: inline-flexbox;
+
 }
 
 p {
@@ -67,12 +70,26 @@ p {
   position: relative;
   line-height: 3rem;
   text-align: left;
+  color: #355C7D
 }
 
 [contenteditable=true]:empty::before {
   content: attr(placeholder);
   display: block; /* For Firefox */
-  color: rgba(0, 0, 0, 0.5);
+  color: rgba(53, 92, 125, 0.5);
   text-align: left;
+}
+
+.padd_text {
+    font-size: 150%;
+    color: #355C7D;
+    display: inline;
+}
+
+.match_text {
+    font-size: 150%;
+    color: #355C7D;
+    display: inline;
+    
 }
 
