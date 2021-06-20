@@ -1,6 +1,6 @@
 // Set the onClick property of the start button
 $(document).ready(function () {
-
+    document.getElementById("message").innerText = localStorage.getItem("script")
     //This function called when the button is clicked
     $("#btn").click(function () {
 

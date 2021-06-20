@@ -205,11 +205,59 @@ class Contractions {
     }
 }
 var contractions = new Contractions(wordLookup);
+function toWords(s) {
 
+    let th = ['', 'thousand', 'million', 'billion', 'trillion'];
+    let dg = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+    let tn = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+    let tw = ['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+    s = s.toString();
+    s = s.replace(/[\, ]/g, '');
+    if (s != parseFloat(s)) return s;
+    var x = s.indexOf('.');
+    if (x == -1)
+        x = s.length;
+    var n = s.split('');
+    var str = '';
+    var sk = 0;
+    for (var i = 0; i < x; i++) {
+        if ((x - i) % 3 == 2) {
+            if (n[i] == '1') {
+                str += tn[Number(n[i + 1])] + ' ';
+                i++;
+                sk = 1;
+            } else if (n[i] != 0) {
+                str += tw[n[i] - 2] + ' ';
+                sk = 1;
+            }
+        } else if (n[i] != 0) { // 0235
+            str += dg[n[i]] + ' ';
+            if ((x - i) % 3 == 0) str += 'hundred ';
+            sk = 1;
+        }
+        if ((x - i) % 3 == 1) {
+            if (sk)
+                str += th[(x - i - 1) / 3] + ' ';
+            sk = 0;
+        }
+    }
 
+    if (x != s.length) {
+        var y = s.length;
+        str += 'point ';
+        for (var i = x + 1; i < y; i++)
+            str += dg[n[i]] + ' ';
+    }
+    return str.replace(/\s+/g, ' ');
+}
+
+var word = {
+    recognized: false,
+    str: ""
+}
 
 class TextHandler {
-    #BAD_MAX = 4
+    #BAD_MAX = 1
     #PADDING_MAX = 6 // make modifiable for accuracy
     #MATCH_ACCURACY = 2 // make modifiable for accuracy
 
@@ -231,15 +279,25 @@ class TextHandler {
             if (contractions.expand(this.originalScript[i]) != this.originalScript[i]) {
                 this.originalScript.splice(i + 1, 0, '')
             }
+            else if (toWords(this.originalScript[i]) != this.originalScript[i]) {
+                let t = toWords(this.originalScript[i]).split(' ').length
+                for (let j = i; j < i + t; j++) {
+                    this.originalScript.splice(j + 1, 0, '')
+                }
+            }
         }
         console.log(this.originalScript);
-        script = contractions.expand(script.toLowerCase()) // TODO: #3 map OG script to this one cuz changed contractions
-        this.script = m_script
+        script = contractions.expand(m_script.join(' ').toLowerCase()).split(' ') // TODO: #3 map OG script to this one cuz changed contractions
+
+        this.script = script
+        this.script.forEach(element => toWords(element))
+
         console.log(this.script);
     }
 
     setCurrSpokenWord(newWord) {
         this.#currSpokenWord = newWord.toLowerCase()
+        console.log(this.#currSpokenWord);
     }
 
     getAccuracies() {
@@ -252,11 +310,6 @@ class TextHandler {
 
     setMatchAcc(match_acc) {
         this.#MATCH_ACCURACY = match_acc
-    }
-
-    initP(color1) {
-        this.color2 = color1
-        return this.wordsFromOriginalScript(color1, color1)
     }
 
     clear() {
@@ -275,21 +328,38 @@ class TextHandler {
         return this.script[this.scriptPos]
     }
 
-    wordsFromOriginalScript(color1) { // TODO: #4 fix wordsFromOGScript()
+    initP(color1) {
+        console.log(this.script);
+        this.color1 = color1
+        return "<span style='color: " + color1 + " '>" + this.originalScript.filter(x => x != '').join(' ') + "</span>"
+    }
 
-        return "<span style='color: " + color1 + " '>" + this.originalScript.slice(0, this.scriptPos).filter(x => x != '').join(' ') +
-            "</span>" + " <span style='color: " + this.color2 + " '>" + this.originalScript.slice(this.scriptPos, this.originalScript.length).filter(x => x != '').join(' ')
-            + "</span>"
 
+    wordsFromOriginalScript() { // TODO: #4 fix wordsFromOGScript()
 
+        // return "<span style='color: " + color1 + " '>" + this.originalScript.slice(0, this.scriptPos).filter(x => x != '').join(' ') +
+        //    "</span>" + " <span style='color: " + this.color2 + " '>" + this.originalScript.slice(this.scriptPos, this.originalScript.length).filter(x => x != '').join(' ')
+        //    + "</span>"
+        let arr = []
+
+        this.originalScript.slice(0, this.scriptPos).filter(x => x != '').forEach(element => {
+            const word = { recognized: true, str: element }
+            arr.push(word)
+        })
+        this.originalScript.slice(this.scriptPos, this.originalScript.length).filter(x => x != '').forEach(element => {
+            const word = { recognized: false, str: element }
+            arr.push(word)
+        })
+
+        return arr
     }
 
     isMatch(a, b) {
         // Levenshtein distance -
         // https://en.wikipedia.org/wiki/Levenshtein_distance
 
-        
-
+        if (a == b) return true
+        console.log(a + ' ' + b);
         if (a.length === 0) return b.length <= this.#MATCH_ACCURACY;
         if (b.length === 0) return a.length <= this.#MATCH_ACCURACY;
 
@@ -310,7 +380,7 @@ class TextHandler {
 
         if (a == b) return true
 
-        if (a.length <= this.#MATCH_ACCURACY + 1 || b.length <= this.#MATCH_ACCURACY + 1) {
+        if (a.length <= this.#MATCH_ACCURACY || b.length <= this.#MATCH_ACCURACY) {
             return false;
         }
 
@@ -420,73 +490,16 @@ class TextHandler {
     }
 }
 
-console.log("loaded");
 
-const t = new TextHandler()
-var running = true
-
-
-window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-const speechRecognition = new SpeechRecognition();
-speechRecognition.interimResults = true;
-speechRecognition.lang = 'en-US';
-
-let p = document.createElement('p');
 const words = document.querySelector('.words');
-words.appendChild(p);
+var text = []
 
-speechRecognition.addEventListener('result', e => {
-    if (running) {
-        const transcript = Array.from(e.results)
-            .map(result => result[0])
-            .map(result => result.transcript)
-            .join(' ');
-
-
-
-
-        let ptemp = transcript.replace("  ", " ").split(" ").pop()
-        let temp = contractions.expand(ptemp)
-        // console.log(temp + ' ' + ptemp);
-        let cont = false
-        if (temp != ptemp) cont = true
-        for (const i of temp.split(" ")) {
-            t.setCurrSpokenWord(i)
-            // console.log(i);
-
-            // p.textContent = transcript
-
-
-            let good = t.algorithm()
-
-            if (good) {
-                p.innerHTML = t.wordsFromOriginalScript("#F67280")
-            }
-
-            // console.log(good + " " + i + " at " + t.scriptPos);
-        }
-
-        if (!t.state) {
-            console.log('%cDone', 'background: #222; color: #ae1ebb');
-            running = false
-            t.clear()
-        }
-        if (t.finished) {
-            // add some finish graphic
-        } else { } // error
-
-
-    }
-});
-
-speechRecognition.addEventListener('end', speechRecognition.start);
 
 
 // Set the onClick property of the start button
 $(document).ready(function () {
 
-    
+
     $("#btn").click(function () {
         window.location.href = "index.html"
 
@@ -494,14 +507,15 @@ $(document).ready(function () {
         // textarea and stored in txt variable
     })
     $("#btn2").click(function () {
-        p.innerHTML = ""
-        t.clear()
+       
+
+        running = !running
         console.log('%cDone', 'background: #222; color: #ae1ebb')
 
         // val() method is used to get the values from 
         // textarea and stored in txt variable
     })
-    
+
 
     document.getElementById("padd_text").innerHTML = t.getAccuracies()[0]
     document.getElementById("match_text").innerHTML = t.getAccuracies()[1]
@@ -516,16 +530,169 @@ $(document).ready(function () {
     }
 
     const script = localStorage.getItem("script")
+
     if (script == null) {
         alert("You must enter a script!")
         window.location.href = "index.html"
     } else {
+
         t.setScript(script)
-        p.innerHTML = t.initP("rgba(53, 92, 125, 0.5)")
+        t.initP("#000")
         running = true;
         try {
             speechRecognition.start()
         } catch (err) { }
     }
-   
+
+    t.originalScript.forEach(element => {
+        if (element.trim() != '') {
+            let p = document.createElement('nobr')
+            p.innerHTML = element + ' '
+            console.log(p);
+            text.push(p)
+
+            words.appendChild(p)
+            if (!isInView(p)) {
+                try {
+
+                    words.insertBefore(document.createTextNode('\n'), p.before())
+
+
+                } catch (err) { console.log(err) }
+            }
+
+        }
+
+    });
+    console.log(text);
+
 })
+
+
+
+console.log("loaded");
+
+var t = new TextHandler()
+var running = true
+
+
+window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const speechRecognition = new SpeechRecognition();
+speechRecognition.interimResults = true;
+speechRecognition.lang = 'en-US';
+
+const color2 = "#F67280"
+
+
+var first = true
+
+
+
+function isInView(elem) {
+
+    var docViewTop = $(window).scrollLeft();
+    var docViewBottom = docViewTop + $(window).width();
+
+    var elemTop = $(elem).offset().left;
+    var elemBottom = elemTop + $(elem).width();
+
+    return ((elemBottom >= docViewTop) && (elemTop <= docViewBottom));
+}
+
+function scrollToView(element){
+   element.scrollIntoViewIfNeeded()
+}
+
+speechRecognition.addEventListener('result', e => {
+    if (running) {
+        if (first) {
+
+            for (const i of words.childNodes) {
+                if (i.textContent == '\n') {
+                    i.remove()
+                }
+            }
+            first = false
+
+        }
+
+        const transcript = Array.from(e.results)
+            .map(result => result[0])
+            .map(result => result.transcript)
+            .join(' ');
+        console.log(t.wordAtCurrPos());
+
+
+
+        let ptemp = transcript.replace("  ", " ").split(" ").pop()
+        let temp = contractions.expand(ptemp)
+
+        // console.log(temp + ' ' + ptemp);
+
+        for (const i of temp.split(" ")) {
+
+            t.setCurrSpokenWord(toWords(i))
+            console.log(i);
+            // console.log(i);
+
+            // p.textContent = transcript
+
+
+            let good = t.algorithm()
+
+            if (good) {
+
+                let wArr = t.wordsFromOriginalScript()
+                let fir = false
+                for (let i = 0; i < text.length; i++) {
+
+                    console.log(wArr.length + ' ' + text.length); // fix text.length too long
+                    let p = text[i]
+                    let element = wArr[i]
+                    if (element.recognized) {
+                        if(!fir) {
+                            fir = true
+                        }
+
+                        p.innerHTML = "<span style='color: " + color2 + " '>" + element.str + ' ' + "</span>"
+
+                    } else {
+
+
+                        p.innerHTML = "<span style='color: " + t.color1 + " '>" + element.str + ' ' + "</span>"
+
+                    }
+
+                    if (!isInView(text[i])) {
+                        try {
+                            text[i - 2].innerHTML += '<wbr />'
+                        } catch (err) { }
+                    }
+                    if (fir) {
+                       scrollToView(p)
+                       fir = false
+                    }
+                   
+
+                };
+            }
+
+            // console.log(good + " " + i + " at " + t.scriptPos);
+
+        }
+        
+
+        if (!t.state) {
+            console.log('%cDone', 'background: #222; color: #ae1ebb');
+            running = false
+            t.clear()
+        }
+
+
+    }
+});
+
+speechRecognition.addEventListener('end', speechRecognition.start);
+
+
